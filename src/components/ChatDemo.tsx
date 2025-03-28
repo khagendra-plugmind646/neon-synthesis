@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +22,7 @@ const ChatDemo = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [showApiInput, setShowApiInput] = useState(false);
+  const [apiProvider, setApiProvider] = useState<'openai' | 'gemini'>('gemini');
 
   const handleSendMessage = async () => {
     if (inputMessage.trim() === '') return;
@@ -43,7 +43,7 @@ const ChatDemo = () => {
       if (!apiKey && !showApiInput) {
         setShowApiInput(true);
         setIsLoading(false);
-        toast.info("Please enter your OpenAI API key to enable AI responses");
+        toast.info(`Please enter your ${apiProvider === 'openai' ? 'OpenAI' : 'Google Gemini'} API key to enable AI responses`);
         return;
       }
       
@@ -53,36 +53,88 @@ const ChatDemo = () => {
         return;
       }
 
-      // Call to OpenAI API
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are Avixara AI, a helpful AI assistant specialized in artificial intelligence solutions for businesses. Be concise, professional, and helpful.'
-            },
-            {
-              role: 'user',
-              content: userMessage.text
+      let botResponse: string;
+
+      if (apiProvider === 'gemini') {
+        // Call to Google Gemini API
+        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: "You are Avixara AI, a helpful AI assistant specialized in artificial intelligence solutions for businesses. Be concise, professional, and helpful."
+                  }
+                ]
+              },
+              {
+                role: "model",
+                parts: [
+                  {
+                    text: "I understand. I am Avixara AI, a specialized assistant focused on providing AI solutions for businesses. I'll keep my responses concise, professional, and helpful. How can I assist you today?"
+                  }
+                ]
+              },
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: userMessage.text
+                  }
+                ]
+              }
+            ],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 150,
             }
-          ],
-          max_tokens: 150,
-          temperature: 0.7
-        })
-      });
+          })
+        });
 
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        botResponse = data.candidates[0].content.parts[0].text.trim();
+      } else {
+        // Call to OpenAI API (keeping the original functionality as fallback)
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content: 'You are Avixara AI, a helpful AI assistant specialized in artificial intelligence solutions for businesses. Be concise, professional, and helpful.'
+              },
+              {
+                role: 'user',
+                content: userMessage.text
+              }
+            ],
+            max_tokens: 150,
+            temperature: 0.7
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        botResponse = data.choices[0].message.content.trim();
       }
-
-      const data = await response.json();
-      const botResponse = data.choices[0].message.content.trim();
 
       // Add bot response
       const botMessage: Message = {
@@ -93,7 +145,7 @@ const ChatDemo = () => {
       
       setMessages(prev => [...prev, botMessage]);
     } catch (error) {
-      console.error("Error calling OpenAI API:", error);
+      console.error(`Error calling ${apiProvider === 'openai' ? 'OpenAI' : 'Google Gemini'} API:`, error);
       
       // Add fallback bot response in case of error
       const errorMessage: Message = {
@@ -103,7 +155,7 @@ const ChatDemo = () => {
       };
       
       setMessages(prev => [...prev, errorMessage]);
-      toast.error("Error communicating with OpenAI API. Check your API key and connection.");
+      toast.error(`Error communicating with ${apiProvider === 'openai' ? 'OpenAI' : 'Google Gemini'} API. Check your API key and connection.`);
     } finally {
       setIsLoading(false);
     }
@@ -129,6 +181,12 @@ const ChatDemo = () => {
     ]);
   };
 
+  const toggleApiProvider = () => {
+    setApiProvider(prev => prev === 'openai' ? 'gemini' : 'openai');
+    setApiKey(''); // Clear API key when switching providers
+    toast.info(`Switched to ${apiProvider === 'openai' ? 'Google Gemini' : 'OpenAI'} API`);
+  };
+
   return (
     <section id="demo" className="min-h-screen mesh-gradient-bg py-20">
       <div className="container mx-auto px-4">
@@ -145,20 +203,30 @@ const ChatDemo = () => {
           {/* API Key Input */}
           {showApiInput && (
             <div className="mb-4 p-4 bg-black/60 backdrop-blur-xl rounded-xl border border-white/10">
-              <p className="text-sm text-gray-300 mb-2">Enter your OpenAI API key to enable AI responses:</p>
+              <div className="flex justify-between items-center mb-2">
+                <p className="text-sm text-gray-300">Enter your {apiProvider === 'openai' ? 'OpenAI' : 'Google Gemini'} API key:</p>
+                <Button
+                  onClick={toggleApiProvider}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs bg-transparent border-white/20 hover:bg-white/10"
+                >
+                  Switch to {apiProvider === 'openai' ? 'Gemini' : 'OpenAI'}
+                </Button>
+              </div>
               <div className="flex">
                 <Input
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
+                  placeholder={apiProvider === 'openai' ? "sk-..." : "AIzaSy..."}
                   className="bg-white/10 border-white/10 text-white"
                 />
                 <Button
                   onClick={() => {
                     if (apiKey) {
                       setShowApiInput(false);
-                      toast.success("API key saved! Your chat is now powered by AI.");
+                      toast.success(`${apiProvider === 'openai' ? 'OpenAI' : 'Google Gemini'} API key saved! Your chat is now powered by AI.`);
                     } else {
                       toast.error("Please enter a valid API key");
                     }
@@ -184,6 +252,9 @@ const ChatDemo = () => {
               <div className="flex items-center">
                 <Bot className="text-avixara-neon-blue mr-2" />
                 <span className="font-medium text-white">Avixara Assistant</span>
+                <span className="ml-2 text-xs bg-avixara-neon-blue/20 text-avixara-neon-blue px-2 py-1 rounded-full">
+                  {apiProvider === 'openai' ? 'OpenAI' : 'Gemini'}
+                </span>
               </div>
               <Button 
                 variant="ghost" 
@@ -257,7 +328,7 @@ const ChatDemo = () => {
                 </Button>
               </div>
               <div className="mt-2 text-xs text-gray-500 text-center">
-                {!apiKey ? "Enter your OpenAI API key to enable AI-powered responses" : "Try asking about our chatbots, voice assistants, or automation solutions"}
+                {!apiKey ? `Enter your ${apiProvider === 'openai' ? 'OpenAI' : 'Google Gemini'} API key to enable AI-powered responses` : "Try asking about our chatbots, voice assistants, or automation solutions"}
               </div>
             </div>
           </div>
